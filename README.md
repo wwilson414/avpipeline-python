@@ -3,7 +3,7 @@
 This project is a lightweight, channel-oriented AV pipeline managed by
 [`avpipeline.py`](./avpipeline.py). It is intended for straightforward live MPEG-TS ingest and
 HLS/DASH packaging, not as a general-purpose media server. This guide covers the Python manager and
-its helper modules; it is distinct from the C++ runtime.
+its helper modules.
 
 The manager reads a single-program MPEG-TS source per enabled channel, discovers its topology with
 TSDuck, then runs one of two paths:
