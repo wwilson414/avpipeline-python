@@ -1,7 +1,7 @@
 # Simple AV Pipeline
 
 This project is a lightweight, channel-oriented AV pipeline managed by
-[`avpipeline.py`](./avpipeline.py). It is intended for straightforward live MPEG-TS ingest and
+[`src/avpipeline.py`](./src/avpipeline.py). It is intended for straightforward live MPEG-TS ingest and
 HLS/DASH packaging, not as a general-purpose media server. This guide covers the Python manager and
 its helper modules.
 
@@ -30,12 +30,29 @@ The pipeline handles one configured source and one video stream per channel. It 
 multi-program selection, multi-bitrate encoding ladders, a user interface, or a general media
 workflow engine.
 
+## Project Layout and Package Build
+
+The Python application modules are under `src/`, tests are under `pytest/`, and helper scripts and
+the Shaka Packager patch are under `scripts/` and `patches/`. Packaging metadata and build settings
+are defined in [`pyproject.toml`](./pyproject.toml). The project requires Python 3.9 or newer.
+
+Build a source distribution and wheel from the project root with:
+
+```bash
+python3 -m pip install --upgrade build
+python3 -m build
+```
+
+The archives are written to `dist/`. The GitHub Actions workflow builds and attaches these archives
+to a GitHub Release when a tag beginning with `v` is pushed; it uses the tag (without the `v`) as
+the package version.
+
 ## Runtime Dependencies
 
 | Requirement | Details |
 | --- | --- |
 | Operating system | Linux. Runtime paths use `/run` and `/var/log`, and process supervision uses Linux/POSIX facilities. |
-| Python | Python 3. The project README documents Python 3.6 or newer. |
+| Python | Python 3.9 or newer. |
 | TSDuck | System TSDuck Python binding (`tsduck.py`) and `libtsduck`; use the binding and native library from the same package/version as `tsp`. There is no PyPI `tsduck` package. |
 | FFmpeg | `ffmpeg` and `ffprobe` CLI programs available in `PATH`; the project README documents FFmpeg 4.0 or newer. |
 | Shaka Packager | A `packager` CLI, version 3.9.3, built with the HLS discontinuity-signal patch included at [`patches/shaka-v3.9.3-hls-discontinuity.patch`](./patches/shaka-v3.9.3-hls-discontinuity.patch). The manager checks the version and `--hls_discontinuity_signal_file` support before transcode workers start; put the executable on `PATH`. |
@@ -162,17 +179,17 @@ uses it as the `label`. `N` is the original one-based audio source ordinal and i
 From the Python project root:
 
 ```bash
-python3 avpipeline.py --help
-python3 avpipeline.py --config mvc.json start
-python3 avpipeline.py --config mvc.json status
-python3 avpipeline.py --config mvc.json urls
-python3 avpipeline.py --config mvc.json stop
+python3 src/avpipeline.py --help
+python3 src/avpipeline.py --config mvc.json start
+python3 src/avpipeline.py --config mvc.json status
+python3 src/avpipeline.py --config mvc.json urls
+python3 src/avpipeline.py --config mvc.json stop
 ```
 
 The same configuration option may follow the command, for example:
 
 ```bash
-python3 avpipeline.py start --config mvc.json
+python3 src/avpipeline.py start --config mvc.json
 ```
 
 | Command | Behavior |
@@ -221,10 +238,10 @@ storage and retention requirements.
 
 | File | Responsibility |
 | --- | --- |
-| [`avpipeline.py`](./avpipeline.py) | CLI entry point, configuration, per-channel supervision, and recovery. |
-| [`ts_topology.py`](./ts_topology.py) | TSDuck PSI/topology discovery and topology-change monitoring. |
-| [`ffmpeg_command.py`](./ffmpeg_command.py) | FFmpeg argument construction for transcode mode. |
-| [`shaka_command.py`](./shaka_command.py) | Shaka Packager argument construction for both modes. |
+| [`src/avpipeline.py`](./src/avpipeline.py) | CLI entry point, configuration, per-channel supervision, and recovery. |
+| [`src/ts_topology.py`](./src/ts_topology.py) | TSDuck PSI/topology discovery and topology-change monitoring. |
+| [`src/ffmpeg_command.py`](./src/ffmpeg_command.py) | FFmpeg argument construction for transcode mode. |
+| [`src/shaka_command.py`](./src/shaka_command.py) | Shaka Packager argument construction for both modes. |
 | [`mvc.json`](./mvc.json) | Example channel configuration. |
 
 The helper modules are imported by `avpipeline.py`; they are not standalone command-line programs.
