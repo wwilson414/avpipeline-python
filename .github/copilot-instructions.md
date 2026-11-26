@@ -1,36 +1,73 @@
-# Copilot Instructions — AI Agent Harness (Template Repository)
+# Project-Specific Copilot Instructions
 
-This repository is the **upstream generic template** for a VS Code / GitHub Copilot multi-agent workflow. It is synced into downstream projects' `.github/` directories.
+## Project Scope
 
-## 1. Repository Purpose & Structure
+This repository contains a lightweight, Linux-oriented manager for live MPEG-TS channels. It
+discovers each input's stream topology with TSDuck and produces live HLS/DASH output with Shaka
+Packager. It is not a general-purpose media server or workflow engine.
 
-Maintain strict separation of responsibilities across files:
+Preserve the supported channel model: one MPEG-TS source, one program, exactly one video stream,
+and zero or more supported audio streams. Do not introduce multi-program selection, transcoding
+ladders, or unrelated service/UI features unless requested.
 
-- `agents/*.agent.md`: Role definitions. Preserve least-privilege tool boundaries (e.g., Reviewer, Tester, Security Reviewer, Robustness Expert must NOT have `edit`; Planner and Decomposer must NOT have `execute`).
-- `skills/*/SKILL.md`: Step-by-step deterministic transaction procedures (e.g., `archive-milestone`, `reconcile-worktree`).
-- `instructions/*.instructions.md`: Auto-injected rules. Keep `applyTo` globs as narrow as possible to avoid context bloat.
-- `orchestrator-protocol.md`: Orchestrator-only scheduling, worktree governance, and transaction triggers. **Do NOT rename to `*.instructions.md`** (must not be auto-injected into non-Orchestrator agents).
-- `ai/scripts/`: Deterministic Bash/Python scripts for locking (`ai-lock.sh`), progress rotation (`ai-rotate-progress.sh`), and state validation.
-- `ai/schema/`: JSON schemas for `task-state.json` and related state files.
+## Code Layout
 
-## 2. Core Design Invariants (Do Not Break)
+- `src/avpipeline.py`: CLI, channel configuration loading, process supervision, and recovery.
+- `src/channel_config.py`: validation and normalization of channel options.
+- `src/ts_topology.py`: TSDuck-based topology discovery and monitoring.
+- `src/ffmpeg_command.py`: FFmpeg command construction for transcoding.
+- `src/shaka_command.py`: Shaka Packager command construction.
+- `pytest/`: unit tests, written with `unittest` and runnable with Python's test runner.
+- `mvc.json`: example runtime configuration.
+- `scripts/`: Shaka Packager patch/build helpers.
+- `patches/`: maintained patch for Shaka Packager v3.9.3.
 
-When editing any file in this repository, preserve these architectural rules:
+Treat `build/` as generated build output or a third-party checkout; do not make project changes
+there. If a change to the Shaka patch is required, update the maintained patch under `patches/`
+and keep it compatible with the provided helper scripts.
 
-1. **Genericity**: Never hardcode project-specific tech stacks, build commands, or business paths into generic files. Project-specific commands belong in downstream `project-stack.instructions.md`.
-2. **No Procedure Duplication**: `orchestrator-protocol.md` defines *when* to trigger a transaction; `SKILL.md` defines *how* to execute it. Do not duplicate Skill steps inside protocols or instructions.
-3. **Single-Writer & Retry Caps**: Keep single-writer ownership for `handoff.md`, `progress.md`, and `task-state.json`, and preserve `retry_count` / `max_retries` enforcement.
-4. **Deterministic State Mutations**: State rotation (`progress.md` 20-entry cap) and milestone archiving must be performed by scripts, never by manual LLM editing.
-5. **Conditional Gating**: Downstream `copilot-instructions.md` must only load `.github/ai/` state files during formal multi-agent workflows or when `TASK-*` / `.github/ai/` is explicitly referenced.
+## Behavior and Compatibility Constraints
 
-## 3. Script & Schema Editing Rules
+- Preserve the distinction between `transcode` and `passthrough`: transcode sends FFmpeg output to
+  Shaka Packager over local UDP; passthrough sends the original source to Shaka without launching
+  FFmpeg.
+- Keep invalid enabled-channel configuration fail-fast. In particular, do not silently treat an
+  unsupported or explicitly empty encoder value as stream copy or as a default.
+- Preserve source audio ordinals when filtering audio streams. Respect labels and language
+  metadata parsed from supported MPEG-TS descriptors.
+- Maintain bounded worker supervision, orderly shutdown/reaping, and the existing PID/log
+  conventions. Avoid broad process-management or output-cleanup changes without focused tests.
+- Keep Shaka Packager v3.9.3 compatibility and the HLS discontinuity-signal patch behavior.
+- Runtime tools (including TSDuck, FFmpeg/ffprobe, and patched Shaka Packager) are external system
+  dependencies; do not add them as Python package dependencies.
 
-- **Atomicity**: Any script modifying state files (`task-state.json`, `progress.md`, `progress-archive.md`) must use atomic writes (write to temp file + `fsync` + `os.replace` or `mv`) and respect `ai-lock.sh`.
-- **Idempotency & Strict Validation**: Preserve idempotent deduplication and fail-fast validation on malformed headers or schemas.
-- **Portability**: Scripts must work in standard Linux/WSL/macOS Bash environments (used via VS Code Remote / local terminals) and resolve paths relative to the downstream project root (`$PWD/.github/ai/`) or script location (`SCRIPT_DIR`).
+## Development and Verification
 
-## 4. Verification Before Finishing Changes
+The project supports Python 3.9 and newer. Run the unit suite from the repository root with:
 
-- For shell scripts (`.sh`): run `bash -n <script>` (and `shellcheck <script>` if available).
-- For Python helpers / inline Python: verify syntax and edge cases (e.g., empty files, missing archive files, lock contention).
-- For JSON schemas or templates: ensure valid JSON formatting.
+```bash
+PYTHONPATH=src python3 -m unittest discover -s pytest -v
+```
+
+For a focused test, select its file, for example:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s pytest -p 'test_channel_config.py' -v
+```
+
+For Python syntax checks, use `python3 -m py_compile` on the changed modules. For changes to shell
+scripts, run `bash -n <script>` and `shellcheck <script>` when ShellCheck is available. The release
+workflow builds distributions with `python -m build`; use that check when changing packaging
+metadata or build behavior.
+
+Unit tests should not require a live media source or launch system services. Running the manager's
+`start`, `stop`, or `restart` commands can interact with `/run/avpipeline`, `/var/log/avpipeline`,
+and configured output directories; do not run them as validation without explicit authorization
+and a safe test configuration.
+
+## Workflow Records
+
+For ordinary repository work, do not load or edit `.github/ai/` workflow state. Follow those
+records only when handling a formal multi-agent workflow task or when the user explicitly
+references `TASK-*` or `.github/ai/`. When applicable, follow the repository's role ownership and
+single-writer rules.
