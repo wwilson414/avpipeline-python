@@ -1,7 +1,9 @@
-# Python CLI Simulator
+# Simple AV Pipeline
 
-This guide covers [`avpipeline.py`](./avpipeline.py), the Python CLI manager, and its helper modules.
-It is distinct from the C++ runtime.
+This project is a lightweight, channel-oriented AV pipeline managed by
+[`avpipeline.py`](./avpipeline.py). It is intended for straightforward live MPEG-TS ingest and
+HLS/DASH packaging, not as a general-purpose media server. This guide covers the Python manager and
+its helper modules; it is distinct from the C++ runtime.
 
 The manager reads a single-program MPEG-TS source per enabled channel, discovers its topology with
 TSDuck, then runs one of two paths:
@@ -9,6 +11,24 @@ TSDuck, then runs one of two paths:
 - **Transcode**: FFmpeg independently reads the source and writes one interleaved MPEG-TS stream
   over local UDP; Shaka Packager creates HLS and DASH output.
 - **Passthrough**: Shaka Packager reads the source directly; no FFmpeg worker is launched.
+
+## Supported Features and Scope
+
+- **Inputs:** One UDP multicast/unicast MPEG-TS source or local MPEG-TS file per channel.
+- **Stream layout:** One program with exactly one video stream and zero or more supported audio
+  streams. TSDuck reads the transport-stream tables to identify the streams.
+- **Transcoding:** Optional FFmpeg video encoding with H.264/AVC (`libx264`) or H.265/HEVC
+  (`libx265`), and audio encoding with AAC, `libfdk_aac`, or Opus.
+- **Packaging:** Live HLS and DASH using CMAF media segments. Passthrough packages the selected
+  source streams without launching FFmpeg; transcode mode encodes them first.
+- **Audio selection and labels:** Optionally discard the first audio stream. Audio labels and
+  language metadata are taken from supported MPEG-TS descriptors, with documented defaults.
+- **Channel operations:** Start, stop, restart, and check channel managers; generate a JSON index
+  of the HLS/DASH manifest paths. Managers supervise their media workers and log their activity.
+
+The pipeline handles one configured source and one video stream per channel. It does not provide
+multi-program selection, multi-bitrate encoding ladders, a user interface, or a general media
+workflow engine.
 
 ## Runtime Dependencies
 
@@ -48,8 +68,8 @@ patch, and build the standalone executable:
 scripts/build-shaka-packager.sh --parallel "$(nproc)"
 ```
 
-By default the script clones `v3.9.3-avpipeline.1` from
-`https://github.com/wwilson414/shaka-packager`, stores the source and build under `build/`, and
+By default the script clones `v3.9.3` from
+`https://github.com/shaka-packager/shaka-packager`, stores the source and build under `build/`, and
 prints the resulting executable path. It also accepts `v3.9.3` with `--version v3.9.3` when the
 selected repository provides that tag. Use `--help` to see options for the repository, version,
 source directory, build directory, and parallel job count. It applies the patch idempotently and
