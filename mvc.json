@@ -1,0 +1,21 @@
+{
+    "baseDir": "/home/www/html/streams",
+    "logLevel": "INFO",
+    "localMulticastAddr": "192.168.100.47",
+    "multiviewChannels": [
+        {
+            "id": "MV-H-001",
+            "enabled": true,
+            "transcode_mode": "transcode",
+            "discard_first_audio": false,
+            "video_encoder": "H.264",
+            "audio_encoder": "AAC",
+            "segment_duration": 4,
+            "live_window_size": 15,
+            "video_gop_size": 60,
+            "video_keyint_min": 60,
+            "video_average_bitrate": 8500000,
+            "source": "udp://@239.1.1.1:5000"
+        }
+    ]
+}

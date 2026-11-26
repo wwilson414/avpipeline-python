@@ -1,0 +1,402 @@
+diff --git a/include/packager/hls_params.h b/include/packager/hls_params.h
+index 6656ec5..7bc20f4 100644
+--- a/include/packager/hls_params.h
++++ b/include/packager/hls_params.h
+@@ -33,6 +33,8 @@ struct HlsParams {
+   bool event_to_vod_on_end_of_stream = false;
+   /// HLS master playlist output path.
+   std::string master_playlist_output;
++  /// Optional file whose content change requests an HLS discontinuity.
++  std::string discontinuity_signal_file;
+   /// The base URL for the Media Playlists and media files listed in the
+   /// playlists. This is the prefix for the files.
+   std::string base_url;
+diff --git a/packager/app/hls_flags.cc b/packager/app/hls_flags.cc
+index b8d9b57..c99e525 100644
+--- a/packager/app/hls_flags.cc
++++ b/packager/app/hls_flags.cc
+@@ -17,6 +17,11 @@ ABSL_FLAG(std::string,
+           "",
+           "Output path for the master playlist for HLS. This flag must be"
+           "used to output HLS.");
++ABSL_FLAG(std::string,
++          hls_discontinuity_signal_file,
++          "",
++          "Optional signal file; a changed non-empty token adds an HLS "
++          "discontinuity before the next segment in each media playlist.");
+ ABSL_FLAG(std::string,
+           hls_base_url,
+           "",
+diff --git a/packager/app/hls_flags.h b/packager/app/hls_flags.h
+index f50e583..336e341 100644
+--- a/packager/app/hls_flags.h
++++ b/packager/app/hls_flags.h
+@@ -14,6 +14,7 @@
+ #include <absl/flags/declare.h>
+ 
+ ABSL_DECLARE_FLAG(std::string, hls_master_playlist_output);
++ABSL_DECLARE_FLAG(std::string, hls_discontinuity_signal_file);
+ ABSL_DECLARE_FLAG(std::string, hls_base_url);
+ ABSL_DECLARE_FLAG(std::string, hls_key_uri);
+ ABSL_DECLARE_FLAG(std::string, hls_playlist_type);
+diff --git a/packager/app/packager_main.cc b/packager/app/packager_main.cc
+index 727da04..a455a3f 100644
+--- a/packager/app/packager_main.cc
++++ b/packager/app/packager_main.cc
+@@ -635,6 +635,8 @@ std::optional<PackagingParams> GetPackagingParams() {
+       absl::GetFlag(FLAGS_event_to_vod_on_end_of_stream);
+   hls_params.master_playlist_output =
+       absl::GetFlag(FLAGS_hls_master_playlist_output);
++  hls_params.discontinuity_signal_file =
++      absl::GetFlag(FLAGS_hls_discontinuity_signal_file);
+   hls_params.base_url = absl::GetFlag(FLAGS_hls_base_url);
+   hls_params.key_uri = absl::GetFlag(FLAGS_hls_key_uri);
+   hls_params.time_shift_buffer_depth =
+diff --git a/packager/hls/base/media_playlist.cc b/packager/hls/base/media_playlist.cc
+index 3e0afc8..e4b6a89 100644
+--- a/packager/hls/base/media_playlist.cc
++++ b/packager/hls/base/media_playlist.cc
+@@ -378,6 +378,13 @@ void MediaPlaylist::SetStreamTypeForTesting(
+   stream_type_ = stream_type;
+ }
+ 
++void MediaPlaylist::AddDiscontinuity() {
++  if (!entries_.empty() &&
++      entries_.back()->type() != HlsEntry::EntryType::kExtDiscontinuity) {
++    entries_.emplace_back(new DiscontinuityEntry());
++  }
++}
++
+ void MediaPlaylist::SetCodecForTesting(const std::string& codec) {
+   codec_ = codec;
+ }
+@@ -540,8 +547,35 @@ bool MediaPlaylist::WriteToFile(const std::filesystem::path& file_path,
+       media_sequence_number_, discontinuity_sequence_number_,
+       hls_params_.start_time_offset);
+ 
+-  for (const auto& entry : entries_)
++  bool first_segment = true;
++  bool discontinuity_before_next_segment = false;
++  bool explicit_program_date_time = false;
++  for (const auto& entry : entries_) {
++    const HlsEntry::EntryType entry_type = entry->type();
++    if (entry_type == HlsEntry::EntryType::kProgramDateTime) {
++      explicit_program_date_time = true;
++    } else if (entry_type == HlsEntry::EntryType::kExtDiscontinuity) {
++      discontinuity_before_next_segment = true;
++    } else if (entry_type == HlsEntry::EntryType::kExtInf) {
++      if (hls_params_.add_program_date_time &&
++          reference_time_ != absl::InfinitePast() && time_scale_ > 0 &&
++          (first_segment || discontinuity_before_next_segment) &&
++          !explicit_program_date_time) {
++        const auto* segment_info =
++            static_cast<const SegmentInfoEntry*>(entry.get());
++        ProgramDateTimeEntry program_date_time(
++            reference_time_ +
++            absl::Seconds(static_cast<double>(segment_info->start_time()) /
++                          time_scale_));
++        absl::StrAppendFormat(&content, "%s\n",
++                              program_date_time.ToString().c_str());
++      }
++      first_segment = false;
++      discontinuity_before_next_segment = false;
++      explicit_program_date_time = false;
++    }
+     absl::StrAppendFormat(&content, "%s\n", entry->ToString().c_str());
++  }
+ 
+   if (playlist_type == HlsPlaylistType::kVod) {
+     content += "#EXT-X-ENDLIST\n";
+@@ -695,40 +729,6 @@ void MediaPlaylist::AddSegmentInfoEntry(const std::string& segment_file_name,
+     }
+   }
+ 
+-  if (hls_params_.add_program_date_time &&
+-      reference_time_ != absl::InfinitePast()) {
+-    // See if we need to add a program date time tag. It is added before the
+-    // first segment, and after every discontinuity.
+-    bool is_first_segment = true;
+-    bool is_discontinuity = false;
+-    if (!entries_.empty()) {
+-      for (auto it = entries_.rbegin(); it != entries_.rend(); ++it) {
+-        if ((*it)->type() == HlsEntry::EntryType::kExtInf) {
+-          is_first_segment = false;
+-          break;
+-        }
+-      }
+-
+-      const auto& last = *entries_.back();
+-      if (last.type() == HlsEntry::EntryType::kExtDiscontinuity) {
+-        is_discontinuity = true;
+-      } else if (entries_.size() >= 2) {
+-        const auto& second_last = **std::prev(entries_.cend(), 2);
+-        if (last.type() == HlsEntry::EntryType::kExtKey &&
+-            second_last.type() == HlsEntry::EntryType::kExtDiscontinuity) {
+-          is_discontinuity = true;
+-        }
+-      }
+-    }
+-
+-    if (is_first_segment || is_discontinuity) {
+-      const absl::Time program_time =
+-          reference_time_ +
+-          absl::Seconds(static_cast<double>(start_time) / time_scale_);
+-      entries_.emplace_back(new ProgramDateTimeEntry(program_time));
+-    }
+-  }
+-
+   entries_.emplace_back(new SegmentInfoEntry(
+       segment_file_name, start_time, segment_duration_seconds, use_byte_range_,
+       start_byte_offset, size, previous_segment_end_offset_));
+diff --git a/packager/hls/base/media_playlist.h b/packager/hls/base/media_playlist.h
+index ee5b3a7..02ada31 100644
+--- a/packager/hls/base/media_playlist.h
++++ b/packager/hls/base/media_playlist.h
+@@ -145,6 +145,9 @@ class MediaPlaylist {
+                           uint64_t start_byte_offset,
+                           uint64_t size);
+ 
++  /// Add EXT-X-DISCONTINUITY before the next segment.
++  virtual void AddDiscontinuity();
++
+   /// Set the reference time for EXT-X-PROGRAM-DATE-TIME. This is the wall clock
+   /// time for when media timestamp is 0.
+   virtual void SetReferenceTime(const absl::Time& reference_time);
+diff --git a/packager/hls/base/media_playlist_unittest.cc b/packager/hls/base/media_playlist_unittest.cc
+index b90d729..e49d1f0 100644
+--- a/packager/hls/base/media_playlist_unittest.cc
++++ b/packager/hls/base/media_playlist_unittest.cc
+@@ -1376,5 +1376,74 @@ TEST_F(MediaPlaylistMultiSegmentTest, ProgramDateTimeWithDiscontinuity) {
+   ASSERT_FILE_STREQ(kMemoryFilePath, kExpectedOutput);
+ }
+ 
++TEST_F(LiveMediaPlaylistTest, ProgramDateTimeWithDiscontinuityAndWindowSlide) {
++  mutable_hls_params()->add_program_date_time = true;
++
++  absl::Time reference_time;
++  std::string err;
++  ASSERT_TRUE(absl::ParseTime("%Y-%m-%dT%H:%M:%E3SZ",
++                              "2025-10-12T14:00:00.000Z", &reference_time,
++                              &err))
++      << err;
++  media_playlist_->SetReferenceTime(reference_time);
++
++  ASSERT_TRUE(media_playlist_->SetMediaInfo(valid_video_media_info_));
++  media_playlist_->AddSegment("file1.ts", 0, 10 * kTimeScale, kZeroByteOffset,
++                              kMBytes);
++  media_playlist_->AddDiscontinuity();
++  media_playlist_->AddSegment("file2.ts", 10 * kTimeScale, 10 * kTimeScale,
++                              kZeroByteOffset, kMBytes);
++  media_playlist_->AddSegment("file3.ts", 20 * kTimeScale, 10 * kTimeScale,
++                              kZeroByteOffset, kMBytes);
++  media_playlist_->AddSegment("file4.ts", 30 * kTimeScale, 10 * kTimeScale,
++                              kZeroByteOffset, kMBytes);
++
++  const char kExpectedOutput[] =
++      "#EXTM3U\n"
++      "#EXT-X-VERSION:6\n"
++      "## Generated with https://github.com/shaka-project/shaka-packager "
++      "version test\n"
++      "#EXT-X-TARGETDURATION:10\n"
++      "#EXT-X-MEDIA-SEQUENCE:1\n"
++      "#EXT-X-DISCONTINUITY-SEQUENCE:1\n"
++      "#EXT-X-PROGRAM-DATE-TIME:2025-10-12T14:00:10.000Z\n"
++      "#EXTINF:10.000,\n"
++      "file2.ts\n"
++      "#EXTINF:10.000,\n"
++      "file3.ts\n"
++      "#EXTINF:10.000,\n"
++      "file4.ts\n";
++
++  const char kMemoryFilePath[] = "memory://media.m3u8";
++  ASSERT_TRUE(media_playlist_->WriteToFile(kMemoryFilePath, false, false));
++  ASSERT_FILE_STREQ(kMemoryFilePath, kExpectedOutput);
++}
++
++TEST_F(MediaPlaylistMultiSegmentTest, ExplicitDiscontinuityPrecedesNextSegment) {
++  valid_video_media_info_.set_segment_template_url("file$Number$.m4s");
++  ASSERT_TRUE(media_playlist_->SetMediaInfo(valid_video_media_info_));
++  media_playlist_->AddSegment("file1.m4s", 0, kTimeScale, 0, kMBytes);
++  media_playlist_->AddDiscontinuity();
++  media_playlist_->AddSegment("file2.m4s", kTimeScale, kTimeScale, 0, kMBytes);
++
++  const char kExpectedOutput[] =
++      "#EXTM3U\n"
++      "#EXT-X-VERSION:6\n"
++      "## Generated with https://github.com/shaka-project/shaka-packager "
++      "version test\n"
++      "#EXT-X-TARGETDURATION:1\n"
++      "#EXT-X-PLAYLIST-TYPE:VOD\n"
++      "#EXTINF:1.000,\n"
++      "file1.m4s\n"
++      "#EXT-X-DISCONTINUITY\n"
++      "#EXTINF:1.000,\n"
++      "file2.m4s\n"
++      "#EXT-X-ENDLIST\n";
++
++  const char kMemoryFilePath[] = "memory://explicit-discontinuity.m3u8";
++  EXPECT_TRUE(media_playlist_->WriteToFile(kMemoryFilePath, false, true));
++  ASSERT_FILE_STREQ(kMemoryFilePath, kExpectedOutput);
++}
++
+ }  // namespace hls
+ }  // namespace shaka
+diff --git a/packager/hls/base/mock_media_playlist.h b/packager/hls/base/mock_media_playlist.h
+index 6b1ddb9..1b31c0a 100644
+--- a/packager/hls/base/mock_media_playlist.h
++++ b/packager/hls/base/mock_media_playlist.h
+@@ -35,6 +35,7 @@ class MockMediaPlaylist : public MediaPlaylist {
+                     int64_t duration,
+                     uint64_t start_byte_offset,
+                     uint64_t size));
++  MOCK_METHOD0(AddDiscontinuity, void());
+   MOCK_METHOD3(AddKeyFrame,
+                void(int64_t timestamp,
+                     uint64_t start_byte_offset,
+diff --git a/packager/hls/base/simple_hls_notifier.cc b/packager/hls/base/simple_hls_notifier.cc
+index bf42f76..45c5577 100644
+--- a/packager/hls/base/simple_hls_notifier.cc
++++ b/packager/hls/base/simple_hls_notifier.cc
+@@ -10,6 +10,7 @@
+ #include <cmath>
+ #include <cstdint>
+ #include <filesystem>
++#include <fstream>
+ #include <iterator>
+ #include <memory>
+ #include <optional>
+@@ -299,6 +300,10 @@ SimpleHlsNotifier::SimpleHlsNotifier(const HlsParams& hls_params)
+   const auto master_playlist_path =
+       std::filesystem::u8path(hls_params.master_playlist_output);
+   master_playlist_dir_ = master_playlist_path.parent_path().string();
++  if (!hls_params.discontinuity_signal_file.empty()) {
++    std::ifstream signal_file(hls_params.discontinuity_signal_file);
++    std::getline(signal_file, last_discontinuity_signal_);
++  }
+   const std::string& default_audio_langauge = hls_params.default_language;
+   const std::string& default_text_language =
+       hls_params.default_text_language.empty()
+@@ -393,7 +398,13 @@ bool SimpleHlsNotifier::NotifyNewSegment(uint32_t stream_id,
+     LOG(ERROR) << "Cannot find stream with ID: " << stream_id;
+     return false;
+   }
+-  auto& media_playlist = stream_iterator->second->media_playlist;
++  RefreshDiscontinuitySignal();
++  auto& stream_entry = *stream_iterator->second;
++  auto& media_playlist = stream_entry.media_playlist;
++  if (stream_entry.discontinuity_pending) {
++    media_playlist->AddDiscontinuity();
++    stream_entry.discontinuity_pending = false;
++  }
+   const std::string& segment_url =
+       GenerateSegmentUrl(segment_name, hls_params().base_url,
+                          master_playlist_dir_, media_playlist->file_name());
+@@ -436,6 +447,25 @@ bool SimpleHlsNotifier::NotifyNewSegment(uint32_t stream_id,
+   return true;
+ }
+ 
++void SimpleHlsNotifier::RefreshDiscontinuitySignal() {
++  const std::string& signal_file = hls_params().discontinuity_signal_file;
++  if (signal_file.empty()) {
++    return;
++  }
++
++  std::ifstream input(signal_file);
++  std::string signal;
++  if (!input || !std::getline(input, signal) || signal.empty() ||
++      signal == last_discontinuity_signal_) {
++    return;
++  }
++
++  last_discontinuity_signal_ = signal;
++  for (auto& stream : stream_map_) {
++    stream.second->discontinuity_pending = true;
++  }
++}
++
+ bool SimpleHlsNotifier::NotifyKeyFrame(uint32_t stream_id,
+                                        int64_t timestamp,
+                                        uint64_t start_byte_offset,
+diff --git a/packager/hls/base/simple_hls_notifier.h b/packager/hls/base/simple_hls_notifier.h
+index bc2ae35..ac28431 100644
+--- a/packager/hls/base/simple_hls_notifier.h
++++ b/packager/hls/base/simple_hls_notifier.h
+@@ -87,9 +87,13 @@ class SimpleHlsNotifier : public HlsNotifier {
+   struct StreamEntry {
+     std::unique_ptr<MediaPlaylist> media_playlist;
+     MediaPlaylist::EncryptionMethod encryption_method;
++    bool discontinuity_pending = false;
+   };
+ 
++  void RefreshDiscontinuitySignal();
++
+   std::string master_playlist_dir_;
++  std::string last_discontinuity_signal_;
+   int32_t target_duration_ = 0;
+   bool end_stream = false;
+ 
+diff --git a/packager/hls/base/simple_hls_notifier_unittest.cc b/packager/hls/base/simple_hls_notifier_unittest.cc
+index 7dbf475..94158bf 100644
+--- a/packager/hls/base/simple_hls_notifier_unittest.cc
++++ b/packager/hls/base/simple_hls_notifier_unittest.cc
+@@ -9,6 +9,7 @@
+ #include <cstddef>
+ #include <cstdint>
+ #include <filesystem>
++#include <fstream>
+ #include <iterator>
+ #include <list>
+ #include <memory>
+@@ -396,6 +397,52 @@ TEST_F(SimpleHlsNotifierTest, NotifyNewSegment) {
+   EXPECT_TRUE(notifier.Flush());
+ }
+ 
++TEST_F(SimpleHlsNotifierTest, SignalFileAddsDiscontinuityToNextSegment) {
++  const std::filesystem::path signal_file =
++      std::filesystem::temp_directory_path() /
++      "shaka_hls_discontinuity_signal_test";
++  std::filesystem::remove(signal_file);
++  {
++    std::ofstream initial_signal(signal_file);
++    ASSERT_TRUE(initial_signal);
++    initial_signal << "epoch-1\n";
++  }
++  hls_params_.discontinuity_signal_file = signal_file.string();
++
++  auto* mock_media_playlist =
++      new MockMediaPlaylist("playlist.m3u8", "", "");
++  auto factory = std::make_unique<MockMediaPlaylistFactory>();
++  auto master_playlist = std::make_unique<MockMasterPlaylist>();
++  EXPECT_CALL(*mock_media_playlist, SetMediaInfo(_)).WillOnce(Return(true));
++  EXPECT_CALL(*factory, CreateMock(_, _, _, _))
++      .WillOnce(Return(mock_media_playlist));
++
++  SimpleHlsNotifier notifier(hls_params_);
++  InjectMasterPlaylist(std::move(master_playlist), &notifier);
++  InjectMediaPlaylistFactory(std::move(factory), &notifier);
++  EXPECT_TRUE(notifier.Init());
++  MediaInfo media_info;
++  uint32_t stream_id = 0;
++  EXPECT_TRUE(notifier.NotifyNewStream(
++      media_info, "playlist.m3u8", "name", "groupid", &stream_id));
++  EXPECT_CALL(*mock_media_playlist, GetLongestSegmentDuration())
++      .WillOnce(Return(2.0))
++      .WillOnce(Return(2.0));
++  EXPECT_CALL(*mock_media_playlist, AddSegment(_, _, _, _, _)).Times(2);
++  EXPECT_CALL(*mock_media_playlist, AddDiscontinuity()).Times(1);
++
++  EXPECT_TRUE(notifier.NotifyNewSegment(
++      stream_id, "old.m4s", 0, kAnyDuration, 0, kAnySize));
++  {
++    std::ofstream next_signal(signal_file, std::ios::trunc);
++    ASSERT_TRUE(next_signal);
++    next_signal << "epoch-2\n";
++  }
++  EXPECT_TRUE(notifier.NotifyNewSegment(
++      stream_id, "new.m4s", 0, kAnyDuration, 0, kAnySize));
++  std::filesystem::remove(signal_file);
++}
++
+ TEST_F(SimpleHlsNotifierTest, NotifyKeyFrame) {
+   // Pointer released by SimpleHlsNotifier.
+   MockMediaPlaylist* mock_media_playlist =
