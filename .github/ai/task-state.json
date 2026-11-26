@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.1.0",
+  "current_milestone": "M1",
+  "current_milestone_status": "pending",
+  "current_task": null,
+  "status": "active",
+  "session_history": [
+    {
+      "timestamp": "YYYY-MM-DD HH:MM",
+      "session": "init",
+      "action": "Initialized multi-agent workflow state",
+      "next": "Confirm M1 plan and decompose tasks"
+    }
+  ],
+  "session": {
+    "is_worktree": false,
+    "task_id_prefix": "CORE"
+  },
+  "archive": {
+    "progress_archive": ".github/ai/archive/progress-archive.md",
+    "tasks_archive": ".github/ai/archive/tasks-archive.md"
+  }
+}

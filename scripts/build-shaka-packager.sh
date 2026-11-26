@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-SHAKA_REPOSITORY="${SHAKA_REPOSITORY:-https://github.com/wwilson414/shaka-packager.git}"
-SHAKA_VERSION="${SHAKA_VERSION:-v3.9.3-avpipeline.1}"
+SHAKA_REPOSITORY="${SHAKA_REPOSITORY:-https://github.com/shaka-project/shaka-packager.git}"
+SHAKA_VERSION="${SHAKA_VERSION:-v3.9.3}"
 SHAKA_SOURCE_DIR="${SHAKA_SOURCE_DIR:-${PROJECT_DIR}/build/shaka-packager/${SHAKA_VERSION}/source}"
 BUILD_DIR="${BUILD_DIR:-${PROJECT_DIR}/build/shaka-packager/${SHAKA_VERSION}/build}"
 BUILD_TYPE="${BUILD_TYPE:-}"
@@ -22,7 +22,7 @@ HLS discontinuity patch, and build the standalone packager executable.
 Options:
   --repository URL       Shaka Git repository
                          (default: ${SHAKA_REPOSITORY})
-  --version TAG          Supported tag: v3.9.3 or v3.9.3-avpipeline.1
+  --version TAG          Supported tag: v3.9.3
                          (default: ${SHAKA_VERSION})
   --source-dir DIR       Source checkout path (default: ${SHAKA_SOURCE_DIR})
   --build-dir DIR        CMake build directory (default: ${BUILD_DIR})
@@ -71,8 +71,8 @@ while (($# > 0)); do
 done
 
 case "${SHAKA_VERSION}" in
-    v3.9.3|v3.9.3-avpipeline.1) ;;
-    *) fail "unsupported Shaka version ${SHAKA_VERSION}; use v3.9.3 or v3.9.3-avpipeline.1" ;;
+    v3.9.3) ;;
+    *) fail "unsupported Shaka version ${SHAKA_VERSION}; use v3.9.3" ;;
 esac
 [[ -n "${SHAKA_REPOSITORY}" ]] || fail "Shaka repository URL must not be empty"
 if [[ -n "${PARALLEL}" ]]; then

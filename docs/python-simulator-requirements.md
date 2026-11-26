@@ -12,7 +12,7 @@ downstream testing when production encoder and Packager components are unavailab
 
 ## Scope and Boundaries
 
-- Use [`mc2slicing.py`](../mc2slicing.py) as the implementation baseline.
+- Use [`avpipeline.py`](../avpipeline.py) as the implementation baseline.
 - Changes may include directly related Python helpers, focused Python tests, and this document.
 - Do not modify C++ source, C++ tests, CMake files, or other C++ runtime/build components.
 - FFmpeg may perform software encoding, but it must not produce the final HLS/DASH segments or

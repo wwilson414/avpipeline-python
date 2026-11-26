@@ -14,9 +14,9 @@ from contextlib import redirect_stderr
 from urllib.parse import parse_qsl, urlsplit
 from unittest.mock import patch
 
-import mc2slicing
+import avpipeline
 
-from mc2slicing import (
+from avpipeline import (
     ChannelSupervisor, InputRecovery, check_packager_version, compute_backoff,
     main, resolve_transcode_mode, topology_input,
 )
@@ -52,20 +52,20 @@ class LoggingIsolationTests(unittest.TestCase):
                 return original_file_handler(main_log, *args, **kwargs)
 
             try:
-                with patch.object(mc2slicing.logging, "FileHandler",
+                with patch.object(avpipeline.logging, "FileHandler",
                                   side_effect=temporary_file_handler), \
-                        patch.object(mc2slicing.os, "makedirs"):
-                    importlib.reload(mc2slicing)
+                        patch.object(avpipeline.os, "makedirs"):
+                    importlib.reload(avpipeline)
 
-                with patch.object(mc2slicing, "load_config",
+                with patch.object(avpipeline, "load_config",
                                   return_value={"multiviewChannels": []}), \
-                        patch.object(mc2slicing, "generate_url_list"):
-                    mc2slicing.start_tasks()
+                        patch.object(avpipeline, "generate_url_list"):
+                    avpipeline.start_tasks()
 
-                with patch.object(mc2slicing.shutil, "which", return_value=None), \
+                with patch.object(avpipeline.shutil, "which", return_value=None), \
                         redirect_stderr(io.StringIO()), \
                         self.assertRaises(SystemExit):
-                    mc2slicing.check_dependencies()
+                    avpipeline.check_dependencies()
 
                 class FakeRecoverySupervisor:
                     input_lost = False
@@ -85,7 +85,7 @@ class LoggingIsolationTests(unittest.TestCase):
                     return ("topology",)
 
                 with open(channel_log, "w", encoding="utf-8") as channel_output:
-                    recovery = mc2slicing.InputRecovery(
+                    recovery = avpipeline.InputRecovery(
                         "channel-1", "plugin", [], lambda topology: {},
                         channel_output, discoverer=discoverer,
                         supervisor_factory=lambda *args: FakeRecoverySupervisor())
@@ -99,7 +99,7 @@ class LoggingIsolationTests(unittest.TestCase):
                 unrelated_handler.flush()
 
                 self.assertEqual(configured_paths, [
-                    os.path.join(mc2slicing.LOG_DIR, "avpipeline.log")])
+                    os.path.join(avpipeline.LOG_DIR, "avpipeline.log")])
                 with open(main_log, encoding="utf-8") as log_file:
                     main_contents = log_file.read()
                 with open(channel_log, encoding="utf-8") as log_file:
@@ -148,7 +148,7 @@ class OutputCleanupTests(unittest.TestCase):
                           encoding="utf-8") as output_file:
                     output_file.write("test")
 
-            removed = mc2slicing.cleanup_channel_output_files(directory, "ch1")
+            removed = avpipeline.cleanup_channel_output_files(directory, "ch1")
 
             self.assertEqual(removed, len(generated))
             self.assertFalse(any(os.path.exists(os.path.join(channel_dir, name))
@@ -191,7 +191,7 @@ class OutputCleanupTests(unittest.TestCase):
             supervisor = ChannelSupervisor(
                 "ch1", {"shaka": command}, io.StringIO(),
                 popen=start_worker)
-            with patch("mc2slicing.WORKER_PID_DIR", directory):
+            with patch("avpipeline.WORKER_PID_DIR", directory):
                 supervisor.step(now=0)
                 try:
                     self.assertFalse(any(os.path.exists(
@@ -220,16 +220,16 @@ class OutputCleanupTests(unittest.TestCase):
                 "baseDir": directory,
                 "multiviewChannels": [{"id": "ch1", "enabled": False}],
             }
-            with patch.object(mc2slicing, "load_config", return_value=config), \
-                    patch.object(mc2slicing, "PID_DIR",
+            with patch.object(avpipeline, "load_config", return_value=config), \
+                    patch.object(avpipeline, "PID_DIR",
                                  os.path.join(directory, "pids")), \
-                    patch.object(mc2slicing, "WORKER_PID_DIR",
+                    patch.object(avpipeline, "WORKER_PID_DIR",
                                  os.path.join(directory, "worker-pids")), \
-                    patch.object(mc2slicing.time, "sleep"), \
-                    patch.object(mc2slicing.subprocess, "run",
+                    patch.object(avpipeline.time, "sleep"), \
+                    patch.object(avpipeline.subprocess, "run",
                                  return_value=subprocess.CompletedProcess(
                                      [], 1, stdout="", stderr="")):
-                mc2slicing.stop_tasks()
+                avpipeline.stop_tasks()
 
             self.assertFalse(os.path.exists(generated))
             self.assertTrue(os.path.exists(unrelated))
@@ -237,7 +237,7 @@ class OutputCleanupTests(unittest.TestCase):
     def test_rejects_channel_ids_that_escape_output_root(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "path component"):
-                mc2slicing.cleanup_channel_output_files(directory, "../outside")
+                avpipeline.cleanup_channel_output_files(directory, "../outside")
 
 
 class ConfigArgumentTests(unittest.TestCase):
@@ -247,8 +247,8 @@ class ConfigArgumentTests(unittest.TestCase):
                 "baseDir": directory,
                 "multiviewChannels": [{"id": "ch1", "outputFormat": "dash"}],
             }
-            with patch.object(mc2slicing, "load_config", return_value=config):
-                mc2slicing.generate_url_list()
+            with patch.object(avpipeline, "load_config", return_value=config):
+                avpipeline.generate_url_list()
 
             with open(os.path.join(directory, "main_urls.json"),
                       encoding="utf-8") as url_file:
@@ -268,31 +268,31 @@ class ConfigArgumentTests(unittest.TestCase):
                     ["start", "--config", config_path]):
                 selected = []
                 with self.subTest(arguments=arguments), \
-                        patch.object(mc2slicing, "JSON_FILE", "mvc.json"), \
-                        patch.object(sys, "argv", ["mc2slicing.py", *arguments]), \
-                        patch.object(mc2slicing, "check_dependencies"), \
-                        patch.object(mc2slicing, "start_tasks",
+                        patch.object(avpipeline, "JSON_FILE", "mvc.json"), \
+                        patch.object(sys, "argv", ["avpipeline.py", *arguments]), \
+                        patch.object(avpipeline, "check_dependencies"), \
+                        patch.object(avpipeline, "start_tasks",
                                      side_effect=lambda: selected.append(
-                                         mc2slicing.JSON_FILE)):
-                    mc2slicing.main()
+                                         avpipeline.JSON_FILE)):
+                    avpipeline.main()
                 self.assertEqual(selected, [os.path.abspath(config_path)])
 
     def test_selected_config_is_passed_to_manager_process(self):
         config_path = "/tmp/custom-mvc.json"
         manager_process = type("ManagerProcess", (), {"pid": 4321})()
-        with patch.object(mc2slicing, "JSON_FILE", "mvc.json"), \
+        with patch.object(avpipeline, "JSON_FILE", "mvc.json"), \
                 patch.object(sys, "argv", [
-                    "mc2slicing.py", "--config", config_path, "start"]), \
-                patch.object(mc2slicing, "check_dependencies"), \
-                patch.object(mc2slicing, "load_config",
+                    "avpipeline.py", "--config", config_path, "start"]), \
+                patch.object(avpipeline, "check_dependencies"), \
+                patch.object(avpipeline, "load_config",
                              return_value={"multiviewChannels": [{
                                  "id": "ch1", "transcode_mode": "transcode"}]}), \
-                patch.object(mc2slicing, "get_pid", return_value=None), \
-                patch.object(mc2slicing, "save_pid"), \
-                patch.object(mc2slicing, "generate_url_list"), \
-                patch.object(mc2slicing.subprocess, "Popen",
+                patch.object(avpipeline, "get_pid", return_value=None), \
+                patch.object(avpipeline, "save_pid"), \
+                patch.object(avpipeline, "generate_url_list"), \
+                patch.object(avpipeline.subprocess, "Popen",
                              return_value=manager_process) as popen:
-            mc2slicing.main()
+            avpipeline.main()
 
         command = popen.call_args.args[0]
         self.assertIn("--config", command)
@@ -319,13 +319,13 @@ class ConfigArgumentTests(unittest.TestCase):
                 },
             ]
         }
-        with patch.object(mc2slicing, "load_config", return_value=config), \
-                patch.object(mc2slicing, "get_pid", return_value=None), \
-                patch.object(mc2slicing, "save_pid"), \
-                patch.object(mc2slicing, "generate_url_list"), \
-                patch.object(mc2slicing.subprocess, "Popen",
+        with patch.object(avpipeline, "load_config", return_value=config), \
+                patch.object(avpipeline, "get_pid", return_value=None), \
+                patch.object(avpipeline, "save_pid"), \
+                patch.object(avpipeline, "generate_url_list"), \
+                patch.object(avpipeline.subprocess, "Popen",
                              return_value=manager_process) as popen:
-            mc2slicing.start_tasks()
+            avpipeline.start_tasks()
 
         self.assertEqual(popen.call_count, 1)
         self.assertEqual(popen.call_args.args[0][-1], "enabled")
@@ -345,11 +345,11 @@ class ConfigArgumentTests(unittest.TestCase):
         )
         for label, channel in invalid_channels:
             with self.subTest(configuration=label), \
-                    patch.object(mc2slicing, "load_config",
+                    patch.object(avpipeline, "load_config",
                                  return_value={"multiviewChannels": [channel]}), \
-                    patch.object(mc2slicing.subprocess, "Popen") as popen:
+                    patch.object(avpipeline.subprocess, "Popen") as popen:
                 with self.assertRaises(SystemExit) as exit_error:
-                    mc2slicing.start_tasks()
+                    avpipeline.start_tasks()
 
             self.assertEqual(exit_error.exception.code, 1)
             popen.assert_not_called()
@@ -364,10 +364,10 @@ class ConfigArgumentTests(unittest.TestCase):
                 },
             ]
         }
-        with patch.object(mc2slicing, "load_config", return_value=config), \
-                patch.object(mc2slicing.subprocess, "Popen") as popen:
+        with patch.object(avpipeline, "load_config", return_value=config), \
+                patch.object(avpipeline.subprocess, "Popen") as popen:
             with self.assertRaises(SystemExit) as exit_error:
-                mc2slicing.start_tasks()
+                avpipeline.start_tasks()
 
         self.assertEqual(exit_error.exception.code, 1)
         popen.assert_not_called()
@@ -385,13 +385,13 @@ class ConfigArgumentTests(unittest.TestCase):
                 },
             ]
         }
-        with patch.object(mc2slicing, "load_config", return_value=config), \
-                patch.object(mc2slicing, "get_pid", return_value=None), \
-                patch.object(mc2slicing, "save_pid"), \
-                patch.object(mc2slicing, "generate_url_list"), \
-                patch.object(mc2slicing.subprocess, "Popen",
+        with patch.object(avpipeline, "load_config", return_value=config), \
+                patch.object(avpipeline, "get_pid", return_value=None), \
+                patch.object(avpipeline, "save_pid"), \
+                patch.object(avpipeline, "generate_url_list"), \
+                patch.object(avpipeline.subprocess, "Popen",
                              return_value=manager_process) as popen:
-            mc2slicing.start_tasks()
+            avpipeline.start_tasks()
 
         self.assertEqual(
             [call.args[0][-1] for call in popen.call_args_list],
@@ -399,12 +399,12 @@ class ConfigArgumentTests(unittest.TestCase):
         )
 
     def test_config_option_without_value_exits_before_startup(self):
-        with patch.object(sys, "argv", ["mc2slicing.py", "start", "--config"]), \
-                patch.object(mc2slicing, "check_dependencies") as check_dependencies, \
-                patch.object(mc2slicing, "start_tasks") as start_tasks, \
+        with patch.object(sys, "argv", ["avpipeline.py", "start", "--config"]), \
+                patch.object(avpipeline, "check_dependencies") as check_dependencies, \
+                patch.object(avpipeline, "start_tasks") as start_tasks, \
                 patch("sys.stderr", new_callable=io.StringIO):
             with self.assertRaises(SystemExit) as exit_error:
-                mc2slicing.main()
+                avpipeline.main()
 
         self.assertEqual(exit_error.exception.code, 2)
         check_dependencies.assert_not_called()
@@ -449,7 +449,7 @@ class ChannelSupervisorTests(unittest.TestCase):
             "test", {"shaka": ["packager"], "ffmpeg": ["ffmpeg"]},
             self.output,
             popen=lambda command, **kwargs: FakeProcess(command, self.events))
-        self.pid_dir_patch = patch("mc2slicing.WORKER_PID_DIR", self.directory.name)
+        self.pid_dir_patch = patch("avpipeline.WORKER_PID_DIR", self.directory.name)
         self.pid_dir_patch.start()
 
     def tearDown(self):
@@ -483,7 +483,7 @@ class ChannelSupervisorTests(unittest.TestCase):
                 {"transcode_mode": None},
                 {"transcode_mode": "automatic"}):
             with self.subTest(config=config), self.assertRaises(ValueError):
-                mc2slicing.resolve_channel_config(config)
+                avpipeline.resolve_channel_config(config)
 
     def test_passthrough_supervises_only_shaka_and_retries_it(self):
         supervisor = ChannelSupervisor(
@@ -547,9 +547,9 @@ class ChannelSupervisorTests(unittest.TestCase):
         try:
             supervisor.step(now=0)
             self.assertIs(popen_options["ffmpeg"]["stdin"],
-                          mc2slicing.subprocess.DEVNULL)
+                          avpipeline.subprocess.DEVNULL)
             self.assertIs(popen_options["packager"]["stdin"],
-                          mc2slicing.subprocess.DEVNULL)
+                          avpipeline.subprocess.DEVNULL)
         finally:
             supervisor.close()
 
@@ -635,7 +635,7 @@ class ChannelSupervisorTests(unittest.TestCase):
             json.dump(config, config_file)
 
         source_inputs = []
-        original_source_input = mc2slicing.source_input
+        original_source_input = avpipeline.source_input
 
         def capture_source_input(*args, **kwargs):
             result = original_source_input(*args, **kwargs)
@@ -647,17 +647,17 @@ class ChannelSupervisorTests(unittest.TestCase):
                 pass
 
             def step(self):
-                mc2slicing.signal.getsignal(mc2slicing.signal.SIGTERM)(None, None)
+                avpipeline.signal.getsignal(avpipeline.signal.SIGTERM)(None, None)
 
             def close(self):
                 pass
 
-        with patch.object(mc2slicing, "JSON_FILE", config_path), \
-                patch.object(mc2slicing, "LOG_DIR", self.directory.name), \
-                patch.object(mc2slicing, "source_input",
+        with patch.object(avpipeline, "JSON_FILE", config_path), \
+                patch.object(avpipeline, "LOG_DIR", self.directory.name), \
+                patch.object(avpipeline, "source_input",
                              side_effect=capture_source_input), \
-                patch.object(mc2slicing, "InputRecovery", StopAfterFirstStep):
-            mc2slicing.run_manager_loop("test")
+                patch.object(avpipeline, "InputRecovery", StopAfterFirstStep):
+            avpipeline.run_manager_loop("test")
 
         self.assertEqual(len(source_inputs), 1)
         source_info = source_inputs[0]
@@ -711,7 +711,7 @@ class ChannelSupervisorTests(unittest.TestCase):
             def __init__(self, channel_id, plugin, args, build_commands, out,
                          topology_monitor_factory=None):
                 expected_monitor = (
-                    mc2slicing.TopologyMonitor
+                    avpipeline.TopologyMonitor
                     if resolve_transcode_mode(channel) == "transcode" else None)
                 assert topology_monitor_factory is expected_monitor
                 self.recovery = InputRecovery(
@@ -725,14 +725,14 @@ class ChannelSupervisorTests(unittest.TestCase):
                 self.recovery.close()
 
         def stop_loop(_delay):
-            mc2slicing.signal.getsignal(mc2slicing.signal.SIGTERM)(None, None)
+            avpipeline.signal.getsignal(avpipeline.signal.SIGTERM)(None, None)
 
-        with patch.object(mc2slicing, "JSON_FILE", config_path), \
-                patch.object(mc2slicing, "LOG_DIR", self.directory.name), \
-                patch.object(mc2slicing, "check_packager_discontinuity_support"), \
-                patch.object(mc2slicing, "InputRecovery", RecoveryAdapter), \
-                patch.object(mc2slicing.time, "sleep", side_effect=stop_loop):
-            mc2slicing.run_manager_loop(channel["id"])
+        with patch.object(avpipeline, "JSON_FILE", config_path), \
+                patch.object(avpipeline, "LOG_DIR", self.directory.name), \
+                patch.object(avpipeline, "check_packager_discontinuity_support"), \
+                patch.object(avpipeline, "InputRecovery", RecoveryAdapter), \
+                patch.object(avpipeline.time, "sleep", side_effect=stop_loop):
+            avpipeline.run_manager_loop(channel["id"])
         return events
 
     def test_manager_passthrough_uses_direct_shaka_only_despite_encoder_settings(self):
@@ -861,12 +861,12 @@ class ChannelSupervisorTests(unittest.TestCase):
                 with open(config_path, "w", encoding="utf-8") as config_file:
                     json.dump(config, config_file)
 
-                with patch.object(mc2slicing, "JSON_FILE", config_path), \
-                        patch.object(mc2slicing, "source_input") as source_input, \
-                        patch.object(mc2slicing, "InputRecovery") as recovery, \
-                        patch.object(mc2slicing, "TopologyMonitor") as monitor, \
+                with patch.object(avpipeline, "JSON_FILE", config_path), \
+                        patch.object(avpipeline, "source_input") as source_input, \
+                        patch.object(avpipeline, "InputRecovery") as recovery, \
+                        patch.object(avpipeline, "TopologyMonitor") as monitor, \
                         self.assertRaises(SystemExit) as exit_error:
-                    mc2slicing.run_manager_loop("test")
+                    avpipeline.run_manager_loop("test")
 
                 self.assertEqual(exit_error.exception.code, 1)
                 source_input.assert_not_called()
@@ -888,9 +888,9 @@ class ChannelSupervisorTests(unittest.TestCase):
                 with open(config_path, "w", encoding="utf-8") as config_file:
                     json.dump(config, config_file)
 
-                with patch.object(mc2slicing, "JSON_FILE", config_path), \
-                        patch.object(mc2slicing, "InputRecovery") as recovery:
-                    mc2slicing.run_manager_loop("test")
+                with patch.object(avpipeline, "JSON_FILE", config_path), \
+                        patch.object(avpipeline, "InputRecovery") as recovery:
+                    avpipeline.run_manager_loop("test")
 
                 recovery.assert_not_called()
 
@@ -905,16 +905,16 @@ class ChannelSupervisorTests(unittest.TestCase):
             "udp://@239.1.1.1:5000?mode=listen&localaddr=192.0.2.9"
             "&token=a%2Fb"
         )
-        source_info = mc2slicing.source_input(source, "192.0.2.25")
+        source_info = avpipeline.source_input(source, "192.0.2.25")
 
         self.assertEqual(source_info["source"], source)
         self.assertEqual(
             source_info["ffmpeg"],
-            mc2slicing.normalize_source_url(source, "192.0.2.25"),
+            avpipeline.normalize_source_url(source, "192.0.2.25"),
         )
 
     def test_multicast_source_input_keeps_tsduck_local_address_option(self):
-        source_info = mc2slicing.source_input(
+        source_info = avpipeline.source_input(
             "udp://@239.1.1.1:5000?mode=listen&localaddr=192.0.2.9",
             "192.0.2.25",
         )
@@ -932,27 +932,27 @@ class ChannelSupervisorTests(unittest.TestCase):
         )
         for source, expected_topology in sources:
             with self.subTest(source=source):
-                source_info = mc2slicing.source_input(source, "192.0.2.25")
+                source_info = avpipeline.source_input(source, "192.0.2.25")
                 self.assertEqual(source_info["topology"], expected_topology)
                 self.assertNotIn("--local-address", source_info["topology"][1])
                 self.assertEqual(source_info["source"], source)
 
     def test_ffmpeg_transcode_command_uses_normalized_consumer_source(self):
         source = "udp://@239.1.1.1:5000?mode=listen&localaddr=192.0.2.9"
-        source_info = mc2slicing.source_input(source, "192.0.2.25")
+        source_info = avpipeline.source_input(source, "192.0.2.25")
         video = type("Video", (), {"pid": 256})()
         topology = type("Topology", (), {"video": video, "audio": ()})()
 
-        command = mc2slicing.build_ffmpeg_command(
+        command = avpipeline.build_ffmpeg_command(
             source_info["ffmpeg"],
-            mc2slicing.select_audio_streams(topology), 1234
+            avpipeline.select_audio_streams(topology), 1234
         )
 
         self.assertEqual(command[command.index("-i") + 1], source_info["ffmpeg"])
         self.assertNotEqual(source_info["ffmpeg"], source)
 
     def test_multicast_source_normalization_sets_authoritative_localaddr(self):
-        normalize = getattr(mc2slicing, "normalize_source_url", None)
+        normalize = getattr(avpipeline, "normalize_source_url", None)
         self.assertTrue(callable(normalize),
                         "multicast input needs a shared source-normalization seam")
         source = ("udp://@239.1.1.1:5000?mode=listen&localaddr=192.0.2.9"
@@ -969,7 +969,7 @@ class ChannelSupervisorTests(unittest.TestCase):
                          [("mode", "listen"), ("ttl", "4"), ("empty", "")])
 
     def test_non_multicast_sources_need_no_local_multicast_address(self):
-        normalize = getattr(mc2slicing, "normalize_source_url", None)
+        normalize = getattr(avpipeline, "normalize_source_url", None)
         self.assertTrue(callable(normalize),
                         "source normalization must be available for all input kinds")
         sources = (
@@ -984,7 +984,7 @@ class ChannelSupervisorTests(unittest.TestCase):
                 self.assertNotIn("localaddr", urlsplit(normalized).query)
 
     def test_non_multicast_sources_ignore_invalid_local_multicast_address(self):
-        normalize = getattr(mc2slicing, "normalize_source_url", None)
+        normalize = getattr(avpipeline, "normalize_source_url", None)
         self.assertTrue(callable(normalize),
                         "source normalization must be available for all input kinds")
         for source in ("udp://@192.0.2.10:5000", "file:///tmp/input.ts",
@@ -993,7 +993,7 @@ class ChannelSupervisorTests(unittest.TestCase):
                 self.assertEqual(normalize(source, "not-an-ip"), source)
 
     def test_multicast_requires_valid_local_ipv4_configuration(self):
-        normalize = getattr(mc2slicing, "normalize_source_url", None)
+        normalize = getattr(avpipeline, "normalize_source_url", None)
         self.assertTrue(callable(normalize),
                         "multicast input needs a shared source-normalization seam")
         for address in (None, "not-an-ip", "2001:db8::1", "192.0.2.256"):
@@ -1061,7 +1061,7 @@ class ChannelSupervisorTests(unittest.TestCase):
                                       FakeProcess(command, self.events)))
         recovery.step(now=0)
         self.assertEqual(recovery.state, "running")
-        recovery.step(now=mc2slicing.TRANSCODE_TOPOLOGY_PROBE_INTERVAL_SEC)
+        recovery.step(now=avpipeline.TRANSCODE_TOPOLOGY_PROBE_INTERVAL_SEC)
         self.assertEqual(recovery.topology, first)
         self.assertEqual(len(discovered), 2)
         self.assertEqual(
@@ -1069,14 +1069,14 @@ class ChannelSupervisorTests(unittest.TestCase):
             ["packager", "ffmpeg"])
 
         recovery.step(
-            now=mc2slicing.TRANSCODE_TOPOLOGY_PROBE_INTERVAL_SEC
-            + mc2slicing.TOPOLOGY_STABILITY_SEC - 0.1)
+            now=avpipeline.TRANSCODE_TOPOLOGY_PROBE_INTERVAL_SEC
+            + avpipeline.TOPOLOGY_STABILITY_SEC - 0.1)
         self.assertEqual(recovery.topology, first)
         self.assertEqual(len(discovered), 2)
 
         recovery.step(
-            now=mc2slicing.TRANSCODE_TOPOLOGY_PROBE_INTERVAL_SEC
-            + mc2slicing.TOPOLOGY_STABILITY_SEC)
+            now=avpipeline.TRANSCODE_TOPOLOGY_PROBE_INTERVAL_SEC
+            + avpipeline.TOPOLOGY_STABILITY_SEC)
 
         self.assertEqual(recovery.topology, changed)
         self.assertEqual(len(discovered), 3)
@@ -1171,12 +1171,12 @@ class ChannelSupervisorTests(unittest.TestCase):
         monitors[0].event = TopologyMonitorEvent(changed, None)
         recovery.step(now=3)
         recovery.step(
-            now=3 + mc2slicing.TOPOLOGY_STABILITY_SEC - 0.1)
+            now=3 + avpipeline.TOPOLOGY_STABILITY_SEC - 0.1)
         self.assertIs(recovery.worker_thread, first_worker_thread)
         self.assertEqual(len(process_records), 2)
 
         recovery.step(
-            now=3 + mc2slicing.TOPOLOGY_STABILITY_SEC)
+            now=3 + avpipeline.TOPOLOGY_STABILITY_SEC)
         deadline = time.monotonic() + 2
         while len([event for event in self.events if event[0] == "start"]) < 4 \
                 and time.monotonic() < deadline:
@@ -1408,7 +1408,7 @@ class ChannelSupervisorTests(unittest.TestCase):
             recovery.step(now=2)
             self.assertEqual(len(starts), 2)
             recovery.step(
-                now=2 + mc2slicing.TOPOLOGY_STABILITY_SEC)
+                now=2 + avpipeline.TOPOLOGY_STABILITY_SEC)
             deadline = time.monotonic() + 2
             while len(starts) < 4 and time.monotonic() < deadline:
                 time.sleep(0.01)
@@ -1555,7 +1555,7 @@ class ChannelSupervisorTests(unittest.TestCase):
 
         manager_thread = threading.get_ident()
         with patch("ts_topology._load_tsduck", return_value=FakeTSDuck()):
-            monitor = mc2slicing.TopologyMonitor(
+            monitor = avpipeline.TopologyMonitor(
                 "file", ["input.ts"], stale_timeout=30)
             try:
                 self.assertEqual(created[0].started_in, manager_thread)
@@ -1591,10 +1591,10 @@ class ChannelSupervisorTests(unittest.TestCase):
                                       FakeProcess(command, self.events)))
         recovery.step(now=0)
         self.assertEqual(recovery.state, "running")
-        recovery.step(now=mc2slicing.SOURCE_PROBE_INTERVAL_SEC - 1)
+        recovery.step(now=avpipeline.SOURCE_PROBE_INTERVAL_SEC - 1)
         self.assertEqual(len(discovered), 1)
 
-        recovery.step(now=mc2slicing.SOURCE_PROBE_INTERVAL_SEC)
+        recovery.step(now=avpipeline.SOURCE_PROBE_INTERVAL_SEC)
         self.assertEqual(recovery.state, "waiting")
         self.assertIsNone(recovery.supervisor)
         self.assertEqual(
@@ -1664,8 +1664,8 @@ class ChannelSupervisorTests(unittest.TestCase):
     def test_packager_version_accepts_exact_393(self):
         result = subprocess.CompletedProcess(
             ["packager", "--version"], 0, stdout="packager version 3.9.3\n", stderr="")
-        with patch("mc2slicing.shutil.which", return_value="/usr/bin/packager"), \
-                patch("mc2slicing.subprocess.run", return_value=result) as run:
+        with patch("avpipeline.shutil.which", return_value="/usr/bin/packager"), \
+                patch("avpipeline.subprocess.run", return_value=result) as run:
             check_packager_version()
         run.assert_called_once_with(
             ["/usr/bin/packager", "--version"],
@@ -1675,26 +1675,26 @@ class ChannelSupervisorTests(unittest.TestCase):
         help_result = subprocess.CompletedProcess(
             ["packager", "--help"], 1,
             stdout="--hls_discontinuity_signal_file path\n", stderr="")
-        with patch("mc2slicing.shutil.which", return_value="/usr/bin/packager"), \
-                patch("mc2slicing.subprocess.run", return_value=help_result) as run:
-            mc2slicing.check_packager_discontinuity_support()
+        with patch("avpipeline.shutil.which", return_value="/usr/bin/packager"), \
+                patch("avpipeline.subprocess.run", return_value=help_result) as run:
+            avpipeline.check_packager_discontinuity_support()
         run.assert_called_once_with(
             ["/usr/bin/packager", "--help"],
             capture_output=True, text=True, timeout=15)
 
         unsupported = subprocess.CompletedProcess(
             ["packager", "--help"], 0, stdout="standard Shaka help\n", stderr="")
-        with patch("mc2slicing.shutil.which", return_value="/usr/bin/packager"), \
-                patch("mc2slicing.subprocess.run", return_value=unsupported), \
+        with patch("avpipeline.shutil.which", return_value="/usr/bin/packager"), \
+                patch("avpipeline.subprocess.run", return_value=unsupported), \
         self.assertRaisesRegex(RuntimeError, "lacks runtime HLS discontinuity"):
-            mc2slicing.check_packager_discontinuity_support()
+            avpipeline.check_packager_discontinuity_support()
 
     def test_packager_version_accepts_build_suffix(self):
         result = subprocess.CompletedProcess(
             ["packager", "--version"], 0,
             stdout="packager version v3.9.3-0a8ba4f-release\n", stderr="")
-        with patch("mc2slicing.shutil.which", return_value="/usr/bin/packager"), \
-                patch("mc2slicing.subprocess.run", return_value=result):
+        with patch("avpipeline.shutil.which", return_value="/usr/bin/packager"), \
+                patch("avpipeline.subprocess.run", return_value=result):
             check_packager_version()
 
     def test_packager_version_rejects_mismatch_and_unknown_output(self):
@@ -1706,29 +1706,29 @@ class ChannelSupervisorTests(unittest.TestCase):
             result = subprocess.CompletedProcess(
                 ["packager", "--version"], 0, stdout=output, stderr="")
             with self.subTest(output=output), \
-                    patch("mc2slicing.shutil.which", return_value="/usr/bin/packager"), \
-                    patch("mc2slicing.subprocess.run", return_value=result), \
+                    patch("avpipeline.shutil.which", return_value="/usr/bin/packager"), \
+                    patch("avpipeline.subprocess.run", return_value=result), \
                     self.assertRaisesRegex(RuntimeError, "version|unrecognized"):
                 check_packager_version()
 
     def test_packager_version_rejects_empty_output(self):
         result = subprocess.CompletedProcess(
             ["packager", "--version"], 0, stdout="", stderr="")
-        with patch("mc2slicing.shutil.which", return_value="/usr/bin/packager"), \
-                patch("mc2slicing.subprocess.run", return_value=result), \
+        with patch("avpipeline.shutil.which", return_value="/usr/bin/packager"), \
+                patch("avpipeline.subprocess.run", return_value=result), \
                 self.assertRaisesRegex(RuntimeError, "empty or unrecognized"):
             check_packager_version()
 
     def test_packager_version_reports_missing_executable(self):
-        with patch("mc2slicing.shutil.which", return_value=None), \
+        with patch("avpipeline.shutil.which", return_value=None), \
                 self.assertRaisesRegex(RuntimeError, "not found in PATH"):
             check_packager_version()
 
     def test_packager_version_reports_nonzero_command_status(self):
         result = subprocess.CompletedProcess(
             ["packager", "--version"], 2, stdout="bad version output", stderr="")
-        with patch("mc2slicing.shutil.which", return_value="/usr/bin/packager"), \
-                patch("mc2slicing.subprocess.run", return_value=result), \
+        with patch("avpipeline.shutil.which", return_value="/usr/bin/packager"), \
+                patch("avpipeline.subprocess.run", return_value=result), \
                 self.assertRaisesRegex(RuntimeError, "exit status 2"):
             check_packager_version()
 
@@ -1748,13 +1748,13 @@ class ChannelSupervisorTests(unittest.TestCase):
         )
         for label, packager_path, result, error_text in failures:
             with self.subTest(failure=label), \
-                    patch.object(sys, "argv", ["mc2slicing.py", "--manager", "test"]), \
-                    patch("mc2slicing.shutil.which",
+                    patch.object(sys, "argv", ["avpipeline.py", "--manager", "test"]), \
+                    patch("avpipeline.shutil.which",
                           side_effect=lambda name: (packager_path if name == "packager"
                                                     else f"/usr/bin/{name}")), \
-                    patch("mc2slicing.subprocess.run", return_value=result) as run, \
-                    patch("mc2slicing.run_manager_loop") as run_manager, \
-                    patch("mc2slicing.subprocess.Popen") as popen:
+                    patch("avpipeline.subprocess.run", return_value=result) as run, \
+                    patch("avpipeline.run_manager_loop") as run_manager, \
+                    patch("avpipeline.subprocess.Popen") as popen:
                 with self.assertLogs("avpipeline", level="ERROR") as logs, \
                         self.assertRaises(SystemExit) as exit_error:
                     main()
@@ -1770,11 +1770,11 @@ class ChannelSupervisorTests(unittest.TestCase):
         result = subprocess.CompletedProcess(
             ["packager", "--version"], 0,
             stdout="packager version v3.9.3-0a8ba4f-release\n", stderr="")
-        with patch.object(sys, "argv", ["mc2slicing.py", "--manager", "test"]), \
-                patch("mc2slicing.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"), \
-                patch("mc2slicing.subprocess.run", return_value=result), \
-                patch("mc2slicing.run_manager_loop") as run_manager, \
-                patch("mc2slicing.subprocess.Popen") as popen:
+        with patch.object(sys, "argv", ["avpipeline.py", "--manager", "test"]), \
+                patch("avpipeline.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"), \
+                patch("avpipeline.subprocess.run", return_value=result), \
+                patch("avpipeline.run_manager_loop") as run_manager, \
+                patch("avpipeline.subprocess.Popen") as popen:
             with self.assertRaises(SystemExit) as exit_error:
                 main()
         self.assertEqual(exit_error.exception.code, 0)

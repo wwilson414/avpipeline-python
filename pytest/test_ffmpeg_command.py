@@ -192,7 +192,7 @@ class FFmpegCommandTests(unittest.TestCase):
                         {encoder_key: value})
 
     def test_legacy_per_track_ffmpeg_builders_and_launchers_are_removed(self):
-        source_path = Path(__file__).resolve().parents[1] / "mc2slicing.py"
+        source_path = Path(__file__).resolve().parents[1] / "avpipeline.py"
         source = source_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
         function_names = {

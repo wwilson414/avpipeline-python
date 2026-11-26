@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task-state.schema.json",
+  "title": "MC2 Task State",
+  "description": "Machine-readable scheduler state for the MC2 workflow. Holds only the current milestone and the single active task; the full task list lives in tasks.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "current_milestone",
+    "current_milestone_status",
+    "current_task",
+    "status",
+    "session_history",
+    "archive"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.1.0"
+    },
+    "current_milestone": {
+      "type": "string",
+      "pattern": "^M[0-9]+$"
+    },
+    "current_milestone_status": {
+      "$ref": "#/$defs/lifecycleStatus",
+      "description": "Lifecycle state of the active milestone; done requires archive rotation before advancing."
+    },
+    "current_task": {
+      "description": "The single active task, or null when no task is active (before first dispatch, between milestones, or when complete). The status of this task is authoritative; the tasks.md status column is a projection of it.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "agent",
+        "retry_count",
+        "max_retries",
+        "depends_on"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/taskId"
+        },
+        "status": {
+          "$ref": "#/$defs/lifecycleStatus"
+        },
+        "agent": {
+          "$ref": "#/$defs/agent",
+          "description": "The agent that should handle this task next."
+        },
+        "retry_count": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Authoritative retry counter. Only this field is updated."
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taskId"
+          },
+          "uniqueItems": true,
+          "description": "Task IDs that must be done first. Must not contain the task's own id (checked by ai-validate.sh)."
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "blocked", "complete"],
+      "description": "Global scheduler status. 'blocked' only after circuit breaker or escalation to Human. 'complete' only when no tasks remain; requires current_task = null."
+    },
+    "retry_count": {
+      "$ref": "#/$defs/nonNegativeInteger",
+      "deprecated": true,
+      "description": "Deprecated. Kept only so older state files still validate. Do not update; use current_task.retry_count."
+    },
+    "session_history": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Newest first. At most 5 entries; the Orchestrator drops the oldest entry manually when adding a new one. Not handled by ai-rotate-progress.sh.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["timestamp", "session", "action", "next"],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$"
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "is_worktree": { "type": "boolean" },
+        "worktree_path": { "type": "string" },
+        "branch_name": { "type": "string" },
+        "git_common_dir": { "type": "string" },
+        "git_dir": { "type": "string" },
+        "remote_configured": { "type": "boolean" },
+        "task_id_prefix": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "description": "Required in practice: the Decomposer uses it to build task IDs (ai-validate.sh warns if missing)."
+        }
+      },
+      "description": "Execution environment metadata for Agents-window and git worktree sessions."
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["progress_archive", "tasks_archive"],
+      "properties": {
+        "progress_archive": {
+          "type": "string",
+          "const": ".github/ai/archive/progress-archive.md"
+        },
+        "tasks_archive": {
+          "type": "string",
+          "const": ".github/ai/archive/tasks-archive.md"
+        }
+      },
+      "description": "Relative paths to the archive files, for cold lookup only."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "complete" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": { "current_task": { "type": "null" } }
+      }
+    }
+  ],
+  "$defs": {
+    "taskId": {
+      "type": "string",
+      "pattern": "^(?:T[0-9]+(?:\\.[0-9]+)*|TASK-[A-Za-z0-9][A-Za-z0-9_-]*-[0-9]+)$"
+    },
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": ["pending", "in-progress", "review", "done", "blocked"]
+    },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "coder",
+        "decomposer",
+        "orchestrator",
+        "planner",
+        "reviewer",
+        "robustness-expert",
+        "security",
+        "tester"
+      ]
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

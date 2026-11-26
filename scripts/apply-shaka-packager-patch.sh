@@ -10,7 +10,7 @@ usage() {
 Usage: $(basename "$0") SHAKA_SOURCE_DIR
 
 Apply the Python project's HLS discontinuity patch to a Shaka Packager
-v3.9.3 or v3.9.3-avpipeline.1 Git checkout. If the patch is already applied,
+v3.9.3 Git checkout. If the patch is already applied,
 the command succeeds without changing files.
 
 This script applies the patch only; build Shaka using its upstream build
@@ -46,10 +46,10 @@ GIT_ROOT="$(cd "${GIT_ROOT}" && pwd -P)"
     fail "pass the Shaka repository root, not a subdirectory: ${SHAKA_SOURCE_DIR}"
 
 SHAKA_VERSION="$(git -C "${SHAKA_SOURCE_DIR}" describe --tags --exact-match HEAD 2>/dev/null)" ||
-    fail "Shaka HEAD must be tagged v3.9.3 or v3.9.3-avpipeline.1"
+    fail "Shaka HEAD must be tagged v3.9.3"
 case "${SHAKA_VERSION}" in
-    v3.9.3|v3.9.3-avpipeline.1) ;;
-    *) fail "unsupported Shaka tag ${SHAKA_VERSION}; expected v3.9.3 or v3.9.3-avpipeline.1" ;;
+    v3.9.3) ;;
+    *) fail "unsupported Shaka tag ${SHAKA_VERSION}; expected v3.9.3" ;;
 esac
 
 if git -C "${SHAKA_SOURCE_DIR}" apply --reverse --check \

@@ -18,7 +18,7 @@ Features:
 
 
 Usage:
-    ./mc2slicing.py {start|stop|restart|status|urls}
+    ./avpipeline.py {start|stop|restart|status|urls}
 ===============================================================================
 """
 

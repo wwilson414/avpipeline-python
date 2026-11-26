@@ -1,6 +1,6 @@
 # Python CLI Simulator
 
-This guide covers [`mc2slicing.py`](./mc2slicing.py), the Python CLI manager, and its helper modules.
+This guide covers [`avpipeline.py`](./avpipeline.py), the Python CLI manager, and its helper modules.
 It is distinct from the C++ runtime.
 
 The manager reads a single-program MPEG-TS source per enabled channel, discovers its topology with
@@ -142,17 +142,17 @@ uses it as the `label`. `N` is the original one-based audio source ordinal and i
 From the Python project root:
 
 ```bash
-python3 mc2slicing.py --help
-python3 mc2slicing.py --config mvc.json start
-python3 mc2slicing.py --config mvc.json status
-python3 mc2slicing.py --config mvc.json urls
-python3 mc2slicing.py --config mvc.json stop
+python3 avpipeline.py --help
+python3 avpipeline.py --config mvc.json start
+python3 avpipeline.py --config mvc.json status
+python3 avpipeline.py --config mvc.json urls
+python3 avpipeline.py --config mvc.json stop
 ```
 
 The same configuration option may follow the command, for example:
 
 ```bash
-python3 mc2slicing.py start --config mvc.json
+python3 avpipeline.py start --config mvc.json
 ```
 
 | Command | Behavior |
@@ -201,10 +201,10 @@ storage and retention requirements.
 
 | File | Responsibility |
 | --- | --- |
-| [`mc2slicing.py`](./mc2slicing.py) | CLI entry point, configuration, per-channel supervision, and recovery. |
+| [`avpipeline.py`](./avpipeline.py) | CLI entry point, configuration, per-channel supervision, and recovery. |
 | [`ts_topology.py`](./ts_topology.py) | TSDuck PSI/topology discovery and topology-change monitoring. |
 | [`ffmpeg_command.py`](./ffmpeg_command.py) | FFmpeg argument construction for transcode mode. |
 | [`shaka_command.py`](./shaka_command.py) | Shaka Packager argument construction for both modes. |
 | [`mvc.json`](./mvc.json) | Example channel configuration. |
 
-The helper modules are imported by `mc2slicing.py`; they are not standalone command-line programs.
+The helper modules are imported by `avpipeline.py`; they are not standalone command-line programs.

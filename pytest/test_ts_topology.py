@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mc2slicing import InputRecovery
+from avpipeline import InputRecovery
 import ts_topology
 from ts_topology import (
     ElementaryStream, Topology, TopologyError, TopologyMonitor,
