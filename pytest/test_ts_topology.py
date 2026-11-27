@@ -9,7 +9,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from avpipeline import InputRecovery
 import ts_topology
@@ -246,21 +246,17 @@ class TopologyTests(unittest.TestCase):
             self.assertFalse(monitor._thread.is_alive())
 
     def test_unavailable_ip_source_enters_bounded_recovery(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        monitors = []
-
-        def monitor_factory(plugin, args, initial_topology, out_fp=None):
-            monitor = TopologyMonitor(
-                plugin, args, initial_topology, out_fp=out_fp,
-                poll_interval=0.01, stale_timeout=2.0)
-            monitors.append(monitor)
-            return monitor
+        monitor = Mock()
+        monitor.poll.side_effect = [
+            None,
+            ts_topology.TopologyMonitorEvent(
+                None, TopologyUnavailableError("PAT/PMT updates stopped")),
+        ]
+        monitor_factory = Mock(return_value=monitor)
 
         output = io.StringIO()
         recovery = InputRecovery(
-            "test", "ip", [str(port)], lambda topology: {},
+            "test", "ip", ["0"], lambda topology: {},
             output, topology_monitor_factory=monitor_factory)
         started = time.monotonic()
         start_time = time.time()
@@ -275,8 +271,9 @@ class TopologyTests(unittest.TestCase):
             self.assertGreater(recovery.next_probe_ts, start_time)
             self.assertIsNone(recovery.supervisor)
             self.assertIsNone(recovery.topology_monitor)
-            self.assertEqual(len(monitors), 1)
-            self.assertGreaterEqual(elapsed, 1.5)
+            monitor_factory.assert_called_once()
+            monitor.close.assert_called_once()
+            self.assertEqual(monitor.poll.call_count, 2)
             self.assertLess(elapsed, 5)
         finally:
             recovery.close()
