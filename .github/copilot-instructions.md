@@ -43,7 +43,7 @@ and keep it compatible with the provided helper scripts.
 
 ## Development and Verification
 
-The project supports Python 3.9 and newer. Run the unit suite from the repository root with:
+The project supports Python 3.12 and newer. Run the unit suite from the repository root with:
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s pytest -v

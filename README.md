@@ -34,7 +34,7 @@ workflow engine.
 
 The Python application modules are under `src/`, tests are under `pytest/`, and helper scripts and
 the Shaka Packager patch are under `scripts/` and `patches/`. Packaging metadata and build settings
-are defined in [`pyproject.toml`](./pyproject.toml). The project requires Python 3.9 or newer.
+are defined in [`pyproject.toml`](./pyproject.toml). The project requires Python 3.12 or newer.
 
 Build a source distribution and wheel from the project root with:
 
@@ -52,7 +52,7 @@ the package version.
 | Requirement | Details |
 | --- | --- |
 | Operating system | Linux. Runtime paths use `/run` and `/var/log`, and process supervision uses Linux/POSIX facilities. |
-| Python | Python 3.9 or newer. |
+| Python | Python 3.12 or newer. |
 | TSDuck | System TSDuck Python binding (`tsduck.py`) and `libtsduck`; use the binding and native library from the same package/version as `tsp`. There is no PyPI `tsduck` package. |
 | FFmpeg | `ffmpeg` and `ffprobe` CLI programs available in `PATH`; the project README documents FFmpeg 4.0 or newer. |
 | Shaka Packager | A `packager` CLI, version 3.9.3, built with the HLS discontinuity-signal patch included at [`patches/shaka-v3.9.3-hls-discontinuity.patch`](./patches/shaka-v3.9.3-hls-discontinuity.patch). The manager checks the version and `--hls_discontinuity_signal_file` support before transcode workers start; put the executable on `PATH`. |
