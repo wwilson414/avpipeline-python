@@ -7,7 +7,7 @@ name = "avpipeline-python"
 version = "0.1.0"
 description = "Audio/video pipeline tools in Python"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = []
 
 [tool.setuptools.packages.find]
