@@ -24,6 +24,9 @@ user's request.
 
 - Implement only what the user requested. Ask for clarification when requirements conflict or
   essential behavior is ambiguous.
+- **Scope Enforcement**: Only modify files explicitly listed in the current task's `Scope / Files`.
+  Do NOT refactor unrelated code or fix unrelated issues. If out-of-scope changes are strictly
+  required, stop and report back to `Orchestrator` to expand the scope or create a new task.
 - Respect repository decisions and instructions. Do not invent project policy or modify
   governance records unless explicitly asked and authorized.
 - Surface failures and relevant errors; do not hide them behind success-shaped fallbacks.

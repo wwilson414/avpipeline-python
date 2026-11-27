@@ -14,6 +14,9 @@ independently verifiable tasks.
    the user identifies or that clearly governs the work.
 2. Keep tasks scoped to a coherent outcome. State the goal, relevant area, acceptance criteria,
    validation, and dependencies for each task.
+   **Task Granularity**: Keep each task focused on a single responsibility. Aim for a manageable
+   scope (typically ≤ 5 files and ~200–300 lines of core logic). If a task exceeds this, split it
+   into smaller subtasks (e.g., `T1.1`, `T1.2`), ordering them only when a real dependency exists.
 3. Make dependencies explicit and acyclic. Keep independent work independent and order tasks only
    when there is a real prerequisite.
 4. Preserve existing task identifiers, statuses, structure, and completed work when editing a

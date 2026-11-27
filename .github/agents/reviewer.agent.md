@@ -16,7 +16,9 @@ and applicable repository instructions.
    regression coverage.
 3. Report only actionable findings. For each, include severity, file and line, impact, and a
    concrete remediation or test suggestion.
-4. If there are no actionable findings, say so and note important limits to what you could verify.
+4. **Scope Creep Check**: Verify that all changes stay strictly within the task's `Scope / Files`.
+   Reject changes that include unrequested refactoring, formatting noise, or out-of-scope edits.
+5. If there are no actionable findings, say so and note important limits to what you could verify.
 
 ## Boundaries
 
